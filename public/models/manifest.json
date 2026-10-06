@@ -1,0 +1,11 @@
+{
+  "file": "mia.glb",
+  "original_file": "brunette.glb",
+  "author": "Ready Player Me / met4citizen (TalkingHead)",
+  "source": "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb",
+  "license": "CC-BY-NC-4.0",
+  "official_license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "sha256": "8864c504b5c11daa2f0037afffdc0815bb0fa2e6062e37a584746116a3c2f538",
+  "bytes": 4721528,
+  "modifications": "Runtime materials, hidden glasses, relaxed pose, expressions, audio-driven mouth, studio lighting. Original GLB unchanged."
+}

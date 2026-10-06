@@ -1,0 +1,8 @@
+{
+  "DEEPSEEK_API_KEY": "configured securely with npm run configure",
+  "DASHSCOPE_API_KEY": "Beijing-region API key",
+  "DASHSCOPE_WORKSPACE_ID": "your workspace ID",
+  "DEEPSEEK_MODEL": "deepseek-v4-flash",
+  "ASR_MODEL": "qwen-audio-3.1-asr-flash-streaming",
+  "TTS_MODEL": "cosyvoice-v3-flash"
+}

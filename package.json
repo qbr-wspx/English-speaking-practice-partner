@@ -1,0 +1,91 @@
+{
+  "name": "english-speaking-companion",
+  "version": "0.2.5",
+  "private": true,
+  "description": "Lingo Studio English speaking practice desktop app",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "postinstall": "node scripts/copy-vad-assets.mjs",
+    "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "dev": "concurrently -k -n WEB,DESKTOP -c cyan,magenta \"npm:dev:web\" \"npm:dev:desktop\"",
+    "dev:web": "vite",
+    "dev:desktop": "wait-on http://127.0.0.1:5173 && npm run build:electron && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build": "tsc -b && vite build --config vite.config.ts --emptyOutDir && npm run build:electron",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:backend": ".venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --distpath backend-dist --workpath backend-build backend\\cafe-lingo-backend.spec",
+    "dist:win": "npm run build && npm run build:backend && node scripts/package-win.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc -b --pretty false",
+    "configure": "powershell -ExecutionPolicy Bypass -File scripts/configure-services.ps1"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@pixiv/three-vrm": "^3.5.5",
+    "@react-three/fiber": "^9.8.1",
+    "@ricky0123/vad-web": "^0.0.30",
+    "@tailwindcss/vite": "^4.1.13",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.544.0",
+    "onnxruntime-web": "^1.23.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss": "^4.1.13",
+    "three": "^0.186.1",
+    "zustand": "^5.0.8",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^5.0.3",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.0.20",
+    "jsdom": "^27.0.0",
+    "typescript": "~5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^5.0.2",
+    "wait-on": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.cafelingo.demo",
+    "productName": "Lingo Studio",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "!node_modules/**/*",
+      "!dist/models/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend-dist/CafeLingoBackend",
+        "to": "backend/CafeLingoBackend"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Cafe-Lingo-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lingo Studio"
+    }
+  }
+}

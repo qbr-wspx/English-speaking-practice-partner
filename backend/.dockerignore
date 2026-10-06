@@ -1,0 +1,11 @@
+tests/
+*.db
+*.db-shm
+*.db-wal
+cloud-data/
+__pycache__/
+.pytest_cache/
+.test-temp/
+*.log
+.env
+.env.*
