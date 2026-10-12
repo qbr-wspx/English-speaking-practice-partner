@@ -9,5 +9,5 @@ export interface Goal { objective: string; completed: boolean; evidence: string;
 export interface Review { summary: string; strengths: string[]; improvements: string[]; next_practice: string; spotlight?: { original: string; improved: string; explanation: string } | null }
 export interface SessionSummary { id: string; scenario_id: string; started_at: string; ended_at: string | null; status: string; scenario: Scenario | null; progress: Goal[] }
 export interface SessionDetail extends SessionSummary { review: Review | null; turns: { id: string; role: "user" | "assistant"; text: string; translation: string; correction: string; suggested_phrase: string }[] }
-export interface Preferences { voice: string; rate: number; translations: boolean; hints: boolean; quality: "standard" | "low"; reducedMotion: boolean; microphone: string }
-export const defaultPreferences: Preferences = { voice: "loongcally_v3", rate: 0.95, translations: true, hints: true, quality: "standard", reducedMotion: false, microphone: "" };
+export interface Preferences { voice: string; rate: number; translations: boolean; hints: boolean; quality: "standard" | "low"; reducedMotion: boolean; microphone: string; avatarScale: number }
+export const defaultPreferences: Preferences = { voice: "loongcally_v3", rate: 0.95, translations: true, hints: true, quality: "standard", reducedMotion: false, microphone: "", avatarScale: 1 };

@@ -1,6 +1,6 @@
 {
   "name": "english-speaking-companion",
-  "version": "0.2.5",
+  "version": "0.2.13",
   "private": true,
   "description": "Lingo Studio English speaking practice desktop app",
   "main": "dist-electron/main.js",
@@ -80,6 +80,7 @@
       "artifactName": "Cafe-Lingo-Setup-${version}.${ext}"
     },
     "nsis": {
+      "include": "build/installer.nsh",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

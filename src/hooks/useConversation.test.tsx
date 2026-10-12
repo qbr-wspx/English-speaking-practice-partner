@@ -16,7 +16,7 @@ class TestSocket extends EventTarget {
   static OPEN = 1; static instances: TestSocket[] = [];
   readyState = 0; sent: (string | ArrayBuffer)[] = [];
   constructor() { super(); TestSocket.instances.push(this); }
-  send(data: string | ArrayBuffer) { this.sent.push(data); if (typeof data === "string" && JSON.parse(data).type === "session.stop") this.receive({ type: "session.ended" }); }
+  send(data: string | ArrayBuffer) { this.sent.push(data); if (typeof data === "string") { const kind = JSON.parse(data).type; if (kind === "session.stop") this.receive({ type: "session.ended" }); if (kind === "session.discard") this.receive({ type: "session.discarded" }); } }
   close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
   open() { this.readyState = 1; this.dispatchEvent(new Event("open")); }
   receive(packet: Record<string, unknown>) { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(packet) })); }
@@ -71,6 +71,25 @@ describe("streaming conversation coordination", () => {
     await receive(ws, { type: "turn.cancelled", turn_id: "opening" }); await receive(ws, { type: "transcript.partial", turn_id: "opening", text: "old" });
     expect(store.getState().phase).toBe("thinking"); expect(store.getState().partial).toBe(""); expect((await text(ws, "duplicate")).accepted).toBe(false);
   });
+  it("pauses listening without ending the session and resumes microphone capture", async () => {
+    const ws = await begin(); await playbackDone();
+    expect(store.getState().phase).toBe("listening");
+    await act(async () => { expect(conversation.pause()).toBe(true); });
+    expect(store.getState().phase).toBe("paused"); expect(mocks.pause).toHaveBeenCalled();
+    expect(ws.events().some(e => e.type === "session.stop" || e.type === "session.discard")).toBe(false);
+    await act(async () => { expect(conversation.resume()).toBe(true); });
+    expect(store.getState().phase).toBe("listening"); expect(mocks.start).toHaveBeenCalled();
+  });
+  it("cancels active speech when paused and waits for cancellation before resuming", async () => {
+    const ws = await begin();
+    await act(async () => { expect(conversation.pause()).toBe(true); });
+    expect(store.getState().phase).toBe("paused"); expect(mocks.player.stop).toHaveBeenCalled();
+    expect(ws.events().filter(e => e.type === "turn.cancel").at(-1)?.turn_id).toBe("opening");
+    await act(async () => { expect(conversation.resume()).toBe(true); });
+    expect(store.getState().phase).toBe("starting");
+    await receive(ws, { type: "turn.cancelled", turn_id: "opening" });
+    expect(store.getState().phase).toBe("listening");
+  });
   it("replays cached audio without a new synthesis request", async () => {
     const ws = await begin(); await playbackDone(); await act(async () => conversation.replay("opening-message"));
     expect(mocks.player.push).toHaveBeenCalledTimes(2); expect(ws.events().some(e => e.type === "assistant.replay")).toBe(false);
@@ -85,6 +104,15 @@ describe("streaming conversation coordination", () => {
     const old = await begin(); await act(async () => { await conversation.stop(); }); const current = await begin();
     await receive(old, { type: "assistant.final", turn_id: "opening", message_id: "old", reply_en: "Old reply" }); await receive(old, { type: "error", message: "Old error" });
     expect(current).not.toBe(old); expect(store.getState().messages).toHaveLength(1); expect(store.getState().phase).toBe("speaking");
+  });
+  it("discards a session before closing and clears playback immediately", async () => {
+    const ws = await begin();
+    await act(async () => { expect(await conversation.stop("discard")).toBe("session"); });
+    expect(ws.events().filter(e => e.type === "session.discard")).toHaveLength(1);
+    expect(ws.events().filter(e => e.type === "session.stop")).toHaveLength(0);
+    expect(mocks.player.stop).toHaveBeenCalled();
+    expect(store.getState().sessionId).toBeNull();
+    expect(store.getState().messages).toHaveLength(0);
   });
   it("retries the original request ID and deduplicates persisted user input", async () => {
     const ws = await begin(); await playbackDone(); const request = await text(ws, "hello");

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ArrowUp, Check, Coffee, Hotel, Plane, ShoppingBag, MapPin, Briefcase, Users, Utensils, LayoutGrid, History, Settings, Plus, Mic, Square, Hand, Copy, Pencil, Trash2, ChevronLeft, RefreshCw } from "lucide-react";
+import { ArrowUp, Check, Coffee, Hotel, Plane, ShoppingBag, MapPin, Briefcase, Users, Utensils, LayoutGrid, History, Settings, Plus, Mic, Square, Hand, Copy, Pencil, Trash2, ChevronLeft, RefreshCw, Pause, Play } from "lucide-react";
 import { Avatar2D } from "./components/Avatar2D";
+import { AvatarDistanceControl, avatarScaleMax, avatarScaleMin } from "./components/AvatarDistanceControl";
 import { SceneBackdrop } from "./components/SceneBackdrop";
 import { ReviewSpotlight } from "./components/ReviewSpotlight";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { useConfirmation } from "./hooks/useConfirmation";
 import { ScenarioEditor } from "./components/ScenarioEditor";
 import { StatusPill } from "./components/StatusPill";
 import { Transcript } from "./components/Transcript";
@@ -15,11 +18,13 @@ import { defaultPreferences, type Preferences, type Scenario, type SessionDetail
 const icons: Record<string, typeof Coffee> = { "cafe-ordering": Coffee, "restaurant-dining": Utensils, "hotel-checkin": Hotel, "airport-travel": Plane, "shopping-returns": ShoppingBag, "directions-transit": MapPin, "job-interview": Briefcase, "daily-social": Users };
 function readPreferences(): Preferences {
   try {
-    const saved = JSON.parse(localStorage.getItem("lingo-preferences") || "{}");
-    return { ...defaultPreferences, ...saved, voice: ["loongcally_v3", "loongemily_v3", "loongabby_v3", "loongannie_v3"].includes(saved.voice) ? saved.voice : defaultPreferences.voice, rate: typeof saved.rate === "number" ? Math.min(1.3, Math.max(0.7, saved.rate)) : 0.95, quality: saved.quality === "low" ? "low" : "standard" };
+    const parsed = JSON.parse(localStorage.getItem("lingo-preferences") || "{}");
+    const saved = parsed && typeof parsed === "object" ? parsed : {};
+    return { ...defaultPreferences, ...saved, voice: ["loongcally_v3", "loongemily_v3", "loongabby_v3", "loongannie_v3"].includes(saved.voice) ? saved.voice : defaultPreferences.voice, rate: typeof saved.rate === "number" && Number.isFinite(saved.rate) ? Math.min(1.3, Math.max(0.7, saved.rate)) : 0.95, quality: saved.quality === "low" ? "low" : "standard", avatarScale: typeof saved.avatarScale === "number" && Number.isFinite(saved.avatarScale) ? Math.min(avatarScaleMax, Math.max(avatarScaleMin, saved.avatarScale)) : defaultPreferences.avatarScale };
   } catch { return defaultPreferences; }
 }
 export default function App() {
+  const confirmation = useConfirmation();
   // The 2D avatar subscribes to audio energy directly, without repainting the entire UI.
   const state = useConversationStore(useShallow(value => ({ ...value, mouthLevel: 0 }))); const conversation = useConversation();
   const [page, setPage] = useState<"home" | "practice" | "history">("home");
@@ -33,6 +38,7 @@ export default function App() {
   const [finishing, setFinishing] = useState(false); const [freshReviewId, setFreshReviewId] = useState<string | null>(null);
   const [inviteRequired, setInviteRequired] = useState(false); const [inviteCode, setInviteCode] = useState(""); const [inviteBusy, setInviteBusy] = useState(false);
   const active = Boolean(state.sessionId) || state.phase === "starting";
+  const paused = state.phase === "paused";
   const canSend = Boolean(state.sessionId) && ["listening", "text-ready", "error"].includes(state.phase);
   const loadScenarios = async () => {
     const items = await api<Scenario[]>("/api/scenarios"); setScenarios(items);
@@ -42,7 +48,11 @@ export default function App() {
   const boot = async () => {
     setLoading(true); setError("");
     try {
-      const backend = await window.desktop?.startBackend();
+      let backend = await window.desktop?.startBackend();
+      if (backend?.state === "error") {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        backend = await window.desktop?.startBackend();
+      }
       if (backend?.state === "needs-invite") { setInviteRequired(true); setError(""); return; }
       if (backend && backend.state !== "ready") throw new Error(backend.message);
       setInviteRequired(false);
@@ -73,15 +83,27 @@ export default function App() {
     const id = await conversation.stop(); setFreshReviewId(id); setPage("history");
     try { await loadSessions(); if (id) { await showDetail(id); await generateReview(id); } } catch (e) { setError((e as Error).message); } finally { setFinishing(false); }
   };
+  const discard = async () => {
+    if (finishing || (state.sessionId && !await confirmation.confirm({ title: "不保存退出？", message: "本次对话和目标进度会被删除，无法恢复。", confirmLabel: "不保存退出" }))) return;
+    setFinishing(true);
+    try {
+      await conversation.stop("discard");
+      setText(""); setError(""); setPage("home");
+      await loadSessions().catch(() => undefined);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "未能确认本次练习已删除，请检查练习记录。");
+      setPage("history"); await loadSessions().catch(() => undefined);
+    } finally { setFinishing(false); }
+  };
   const removeScenario = async (scenario: Scenario) => {
-    if (!window.confirm(`删除“${scenario.title_zh}”？已有练习记录会保留。`)) return;
+    if (!await confirmation.confirm({ title: "删除场景？", message: `删除“${scenario.title_zh}”？已有练习记录会保留。`, confirmLabel: "删除场景" })) return;
     try { await api(`/api/scenarios/${scenario.id}`, { method: "DELETE" }); await loadScenarios(); } catch (e) { setError((e as Error).message); }
   };
   const copyScenario = async (scenario: Scenario) => {
     try { const copied = await api<Scenario>("/api/scenarios", { method: "POST", body: JSON.stringify({ ...scenario, title_zh: `${scenario.title_zh}（副本）`.slice(0, 100), level }) }); await loadScenarios(); setSelected(copied); setFilter("自定义"); } catch (e) { setError((e as Error).message); }
   };
   const removeSession = async (id: string) => {
-    if (!window.confirm("删除这次练习及复盘？此操作无法撤销。")) return;
+    if (!await confirmation.confirm({ title: "删除练习记录？", message: "这次练习及复盘会被删除，此操作无法撤销。", confirmLabel: "删除记录" })) return;
     try { await api(`/api/sessions/${id}`, { method: "DELETE" }); if (detail?.id === id) setDetail(null); await loadSessions(); } catch (e) { setError((e as Error).message); }
   };
   const repeat = async (item: SessionDetail) => {
@@ -121,15 +143,16 @@ export default function App() {
         </div></section>}</div>}
       {page === "practice" && selected && <div className="practice-layout"><section className="practice-stage">
         <SceneBackdrop scenario={selected} />
-        <div className="stage-header"><span>{selected.title}</span><span>{level}</span></div><Avatar2D phase={state.phase} reducedMotion={preferences.reducedMotion} completed={completed} />
+        <div className="stage-header"><span>{selected.title}</span><span>{level}</span></div><Avatar2D phase={state.phase} reducedMotion={preferences.reducedMotion} completed={completed} scenic scale={preferences.avatarScale} />
+        <AvatarDistanceControl value={preferences.avatarScale} onChange={avatarScale => updatePreferences({ ...preferences, avatarScale })} />
         <div className="stage-caption"><h1>{selected.role_name}</h1><span>{selected.role_description}</span></div><div className="status-wrap"><StatusPill phase={state.phase} /></div>
         <section className="goal-panel"><div><strong>本次练习目标</strong><span>{completed}/{state.progress.length || 3}</span></div>{(state.progress.length ? state.progress : selected.objectives.map(objective => ({ objective, completed: false, evidence: "", turn_id: "" }))).map((goal, i) => <div className={goal.completed ? "done" : ""} key={i}><span>{goal.completed ? <Check size={13} /> : i + 1}</span><p>{goal.objective}{goal.evidence && <small>“{goal.evidence}”</small>}</p></div>)}{completed === 3 && <p className="goal-complete">目标已完成！可以结束复盘，也可以继续聊。</p>}</section>
-      </section><section className="conversation-panel"><header><div><h2>现在，轮到你开口。</h2><p>说完后自然停顿，Mia 会接着聊。</p></div><span className="connection-dot" /></header>
+      </section><section className={`conversation-panel ${paused ? "is-paused" : ""}`}><header><div><h2>{paused ? "练习已暂停。" : "现在，轮到你开口。"}</h2><p>{paused ? "当前对话和目标进度已经保留。" : "说完后自然停顿，Mia 会接着聊。"}</p></div><span className="connection-dot" /></header>
         <Transcript messages={state.messages} translations={preferences.translations} hints={preferences.hints} roleName={selected.role_name} replay={conversation.replay} canReplay={canSend} />
         {state.partial && <div className="partial-transcript" aria-live="polite">正在听：{state.partial}</div>}
         {state.microphoneError && <div className="notice-banner">{state.microphoneError}</div>}{state.error && <div className="error-banner" role="alert">{state.error}{canSend && <button onClick={() => { if (!conversation.retry()) setText(text || ""); }}>重试这一轮</button>}</div>}
-        <div className="composer"><input aria-label="英文输入" value={text} onChange={e => setText(e.target.value)} maxLength={4000} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) send(); }} placeholder={canSend ? "也可以输入英文…" : "等 Mia 说完，或点击打断…"} disabled={!canSend} /><button className="primary icon-button" aria-label="发送" disabled={!canSend || !text.trim()} onClick={send}><ArrowUp size={18} /></button></div>
-        <footer className="practice-controls">{state.sessionId ? <><button disabled={canSend || finishing} onClick={conversation.interrupt}><Hand size={16} />打断</button><button className="end-button" disabled={finishing} onClick={() => void finish()}><Square size={14} />{finishing ? "正在结束…" : "结束并复盘"}</button></> : <><button onClick={() => void conversation.stop().then(() => setPage("home"))}><ChevronLeft size={16} />返回场景</button><button className="primary" disabled={state.phase === "starting"} onClick={start}><Mic size={16} />重新开始</button></>}</footer>
+        <div className="composer"><input aria-label="英文输入" value={text} onChange={e => setText(e.target.value)} maxLength={4000} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) send(); }} placeholder={paused ? "点击继续练习后，可以说话或输入…" : canSend ? "也可以输入英文…" : "等 Mia 说完，或点击打断…"} disabled={!canSend} /><button className="primary icon-button" aria-label="发送" disabled={!canSend || !text.trim()} onClick={send}><ArrowUp size={18} /></button></div>
+        <footer className="practice-controls">{state.sessionId ? <><div className="practice-session-actions"><button className={paused ? "resume-button" : ""} disabled={finishing} onClick={() => paused ? conversation.resume() : conversation.pause()}>{paused ? <Play size={16} /> : <Pause size={16} />}{paused ? "继续练习" : "暂停"}</button><button disabled={paused || canSend || finishing} onClick={conversation.interrupt}><Hand size={16} />打断</button></div><div className="practice-exit-actions"><button className="discard-button" disabled={finishing} onClick={() => void discard()}><Trash2 size={15} />不保存退出</button><button className="end-button" disabled={finishing} onClick={() => void finish()}><Square size={14} />{finishing ? "正在结束…" : "结束并复盘"}</button></div></> : <><button onClick={() => void discard()}><ChevronLeft size={16} />返回场景</button><button className="primary" disabled={state.phase === "starting"} onClick={start}><Mic size={16} />重新开始</button></>}</footer>
       </section></div>}
       {page === "history" && <div className="history-layout"><section className="history-list"><div className="page-heading"><div><h1>每一次开口，都算数。</h1><p>回看表达，再练得更自然。</p></div></div>{sessions.length ? sessions.map(item => <article key={item.id} className={`history-item ${detail?.id === item.id ? "selected" : ""}`}><button onClick={() => void showDetail(item.id)}><strong>{item.scenario?.title_zh || scenarios.find(x => x.id === item.scenario_id)?.title_zh || "历史练习"}</strong><span>{new Date(item.started_at).toLocaleString("zh-CN")}</span><small>{item.status === "interrupted" ? "中断的练习" : "已结束"} · {item.progress.filter(x => x.completed).length}/3 个目标</small></button><button className="icon-button" aria-label="删除练习" onClick={() => void removeSession(item.id)}><Trash2 size={16} /></button></article>) : <div className="empty-state"><h2>你的第一段对话，从这里开始。</h2><p>完成一次练习后，在这里回看表达和反馈。</p><button className="primary" onClick={() => setPage("home")}>选择场景</button></div>}</section>
         <section className="review-panel">{detail ? <><header><div><h2>{detail.scenario?.title_zh || "练习详情"}</h2><p>{detail.scenario?.level || "A2"} · {detail.turns.filter(x => x.role === "user").length} 次表达</p></div><button onClick={() => void repeat(detail)} disabled={reviewBusy}><RefreshCw size={16} />再练一次</button></header><div className="review-content">
@@ -140,5 +163,6 @@ export default function App() {
       </>}
     </div><SettingsDialog open={settingsOpen} value={preferences} onChange={updatePreferences} onClose={() => setSettingsOpen(false)} />
     {editor && <ScenarioEditor initial={editor.initial} onClose={() => setEditor(null)} onSaved={saved => { setEditor(null); setSelected(saved); setLevel(saved.level); void loadScenarios().catch(e => setError(e.message)); setFilter("自定义"); }} />}
+    {confirmation.request && <ConfirmDialog request={confirmation.request} onResult={confirmation.respond} />}
   </main>;
 }

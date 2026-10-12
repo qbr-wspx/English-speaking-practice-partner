@@ -38,7 +38,7 @@ for ($lingoCycle = 1; $lingoCycle -le $Cycles; $lingoCycle++) {
             if ($lingoProcess.ParentProcessId -notin $lingoProcessIds) {
                 $lingoRootProcess = Get-Process -Id $lingoProcess.ProcessId
                 if ($lingoRootProcess.Path -ne $lingoTarget) { throw 'Refusing to stop a different application.' }
-                $lingoRootProcess.Kill($true)
+                Stop-Process -Id $lingoRootProcess.Id -Force
                 $lingoRootProcess.WaitForExit(5000) | Out-Null
             }
         }

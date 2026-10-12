@@ -9,6 +9,7 @@ export type ConversationPhase =
   | "transcribing"
   | "thinking"
   | "speaking"
+  | "paused"
   | "error";
 
 export interface ConversationMessage {

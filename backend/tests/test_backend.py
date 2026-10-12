@@ -89,6 +89,19 @@ def test_cached_client_playback_cancel_echoes_requested_turn(services):
         assert until(ws, "assistant.final")["turn_id"] == "after-replay"
 
 
+def test_discard_during_reply_deletes_session_and_turns(services):
+    with client_for(services) as client, client.websocket_connect("/ws/conversation") as ws:
+        ready = start(ws)
+        session_id = ready["session_id"]
+        ws.send_json({"type": "text.submit", "turn_id": "discarded-turn", "text": "I have a reservation under Chen."})
+        until(ws, "assistant.audio.end")
+        assert len(client.get(f"/api/sessions/{session_id}").json()["turns"]) == 3
+        ws.send_json({"type": "session.discard"})
+        assert until(ws, "session.discarded")["session_id"] == session_id
+        assert client.get(f"/api/sessions/{session_id}").status_code == 404
+        assert all(row["id"] != session_id for row in client.get("/api/sessions").json())
+
+
 def test_selected_scenario_progress_evidence_and_idempotent_retry(services):
     with client_for(services) as client, client.websocket_connect("/ws/conversation") as ws:
         ready = start(ws)

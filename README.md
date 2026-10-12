@@ -23,7 +23,7 @@ npm run dev
 5. 脚本保存本机加密配置并立即验证 DeepSeek 回复、TTS 合成和合成音频的实时 ASR。三项结果应为 `passed`。试听 `.cache/voice-preview.wav` 检查英语音色；这是合成测试音频，不含用户录音。
 6. 若出现 `auth_failed`，检查 Key 的地域与空间权限；额度不足时检查百炼余额/资源包。修正后重新运行脚本即可。应用运行期间更新配置后需退出并重新启动。
 
-配置保存在 `%APPDATA%/english-speaking-companion/services.bin`，通过 Electron safeStorage 使用当前 Windows 账号加密。开发版和安装版自动读取同一配置。`services.example.json` 是不含密钥的结构说明。安装包不包含个人配置；换电脑或 Windows 账号时，在项目中重新运行配置脚本。
+配置保存在 `%APPDATA%/english-speaking-companion/services.bin`，通过 Electron safeStorage 加密，并依赖当前用户目录的 Local State。若开发环境由 Codex MSIX 启动而被重定向，安装版首次启动会在旧 profile 中解密，再在普通桌面 profile 中重新加密保存；不能只复制 services.bin。`services.example.json` 是不含密钥的结构说明。安装包不包含个人配置；换电脑或 Windows 账号时，在项目中重新运行配置脚本。
 
 0.2.1 会等待系统加密初始化并重试读取，配置不完整时明确报错并停止启动服务。可以点击“重新连接”重新读取；不会要求在应用内输入密钥。`%APPDATA%/english-speaking-companion/startup-status.json` 只记录启动阶段、错误类别和服务是否配置，不含密钥。需要诊断时可运行 `node_modules/.bin/electron scripts/inspect-local-config.cjs` 查看配置项是否可读。
 
@@ -61,7 +61,7 @@ cd backend
 ..\.venv\Scripts\python.exe -m pytest -q --basetemp=.test-temp -p no:cacheprovider
 ```
 
-安装包输出到 `release/Cafe-Lingo-Setup-0.2.5.exe`，安装快捷方式显示 Lingo Studio。打包暂存目录由终端报告，保留以便排查。关闭旧版后安装新版，数据和开发阶段的本机配置自动保留。安装程序尚未配置商业代码签名。
+安装包输出到 `release/Cafe-Lingo-Setup-0.2.13.exe`，安装快捷方式显示 Lingo Studio。0.2.13 将删除与不保存退出改为应用内确认框，避免原生确认框后的输入焦点问题。保留 0.2.12 修复开发环境与普通桌面之间的配置隔离：首次启动自动迁移并重新加密配置；目标目录没有数据库时迁移旧练习记录，原文件保留。应用内不要求填写，安装后无需运行项目终端。该版本包含练习暂停与继续、场景插画、Mia 状态变化、人物距离调节、复盘视觉强化和不保存退出。安装包不包含密钥，尚未配置商业代码签名。验收必须由资源管理器实际启动，不能仅以 Codex 子进程启动成功作为依据。
 
 0.2.3 修复后台隐藏窗口导致再次双击无反应的问题：页面就绪时明确显示主窗口，再次启动会显示、还原并聚焦已有窗口。`node scripts/smoke-window-recovery.mjs` 使用隔离数据检查隐藏与最小化恢复；快捷方式冷启动检查同时要求窗口可见和服务就绪。
 

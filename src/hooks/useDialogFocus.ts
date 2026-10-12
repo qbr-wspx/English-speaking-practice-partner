@@ -19,6 +19,6 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, open: boolean
       else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("keydown", key); previous?.focus(); };
+    return () => { document.removeEventListener("keydown", key); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, [open, ref]);
 }

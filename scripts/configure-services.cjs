@@ -24,6 +24,9 @@ app.whenReady().then(async () => {
     const temporary = `${file}.tmp`;
     fs.writeFileSync(temporary, (await safeStorage.encryptStringAsync(JSON.stringify(config))).toString('base64'));
     fs.renameSync(temporary, file);
+    // safeStorage depends on this profile's Local State. The desktop app migrates
+    // a redirected development profile by decrypting and re-encrypting; do not
+    // copy ciphertext into a different profile or an installer resource folder.
     console.log('Encrypted configuration saved. Running live service checks...');
     const root = path.resolve(__dirname, '..');
     const child = spawn(path.join(root, '.venv', 'Scripts', 'python.exe'), ['check_services.py'], {

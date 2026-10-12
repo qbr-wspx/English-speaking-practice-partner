@@ -18,6 +18,7 @@ export function useConversation() {
   const active = useRef(false);
   const busy = useRef(false);
   const capturing = useRef(false);
+  const paused = useRef(false);
   const generation = useRef(0);
   const turn = useRef("");
   const cancellation = useRef<string | null>(null);
@@ -32,13 +33,13 @@ export function useConversation() {
   const player = useRef<PcmPlayer | null>(null);
   const resumeRef = useRef<() => Promise<void>>(async () => {});
   if (!player.current) player.current = new PcmPlayer(level => store.getState().setMouthLevel(level), () => {
-    if (!active.current) return;
+    if (!active.current || paused.current) return;
     socket.current?.send(JSON.stringify({ type: "playback.complete", turn_id: turn.current }));
     void resumeRef.current();
   });
   const clearTimeoutRef = () => { if (timeout.current) clearTimeout(timeout.current); timeout.current = null; };
   const resume = useCallback(async () => {
-    if (!active.current) return;
+    if (!active.current || paused.current) return;
     const version = generation.current;
     busy.current = false; capturing.current = false; preRoll.current = []; clearTimeoutRef();
     const state = store.getState(); state.setPartial(""); state.setMouthLevel(0);
@@ -48,7 +49,7 @@ export function useConversation() {
     } else state.setPhase("text-ready");
   }, []);
   resumeRef.current = resume;
-  const pause = () => { capturing.current = false; preRoll.current = []; void vad.current?.pause().catch(() => undefined); };
+  const pauseCapture = () => { capturing.current = false; preRoll.current = []; void vad.current?.pause().catch(() => undefined); };
   const armTimeout = () => {
     clearTimeoutRef(); const version = generation.current; const id = turn.current;
     timeout.current = setTimeout(() => {
@@ -68,7 +69,7 @@ export function useConversation() {
   };
   const handle = (packet: Packet) => {
     const state = store.getState();
-    if (packet.type === "session.ended") { stopped.current?.(); return; }
+    if (packet.type === "session.ended" || packet.type === "session.discarded") { stopped.current?.(); return; }
     if (!active.current) return;
     if (packet.session_id && state.sessionId && packet.session_id !== state.sessionId) return;
     if (packet.type === "session.ready") {
@@ -80,7 +81,10 @@ export function useConversation() {
     }
     if (packet.type === "turn.cancelled") {
       if (cancellation.current === null || packet.turn_id !== cancellation.current) return;
-      cancellation.current = null; clearTimeoutRef(); void resume(); return;
+      cancellation.current = null; clearTimeoutRef();
+      if (paused.current) { busy.current = true; state.setPhase("paused"); }
+      else void resume();
+      return;
     }
     if (packet.turn_id && packet.turn_id !== turn.current) return;
     if (packet.type === "transcript.partial") state.setPartial(packet.text ?? "");
@@ -91,7 +95,7 @@ export function useConversation() {
       state.setError(null); currentMessage.current = packet.message_id!;
       state.addMessage({ id: packet.message_id, role: "assistant", text: packet.reply_en!, translation: packet.translation_zh, correction: packet.correction, suggestedPhrase: packet.suggested_phrase });
     } else if (packet.type === "goals.updated") state.setProgress(packet.progress ?? []);
-    else if (packet.type === "assistant.audio.start") { pause(); busy.current = true; chunks.current = []; player.current!.start(packet.sample_rate ?? 24000); armTimeout(); }
+    else if (packet.type === "assistant.audio.start") { pauseCapture(); busy.current = true; chunks.current = []; player.current!.start(packet.sample_rate ?? 24000); armTimeout(); }
     else if (packet.type === "assistant.audio.chunk") {
       clearTimeoutRef(); state.setPhase("speaking");
       const bytes = Uint8Array.from(atob(packet.audio!), x => x.charCodeAt(0)); chunks.current.push(bytes); player.current!.push(bytes); armTimeout();
@@ -103,6 +107,7 @@ export function useConversation() {
       clearTimeoutRef(); capturing.current = false; player.current!.stop();
       state.setError(packet.message || "这轮未完成，请重试。");
       if (!state.sessionId) { active.current = false; busy.current = false; state.setPhase("error"); }
+      else if (paused.current) state.setPhase("paused");
       else void resume();
     }
   };
@@ -110,7 +115,7 @@ export function useConversation() {
   const start = useCallback(async (scenario?: Scenario, level = "A2", settings = defaultPreferences) => {
     if (active.current) return;
     const version = ++generation.current;
-    preferences.current = settings; active.current = true; busy.current = true; cancellation.current = null; lastInput.current = null; turn.current = ""; cache.current.clear();
+    preferences.current = settings; active.current = true; paused.current = false; busy.current = true; cancellation.current = null; lastInput.current = null; turn.current = ""; cache.current.clear();
     store.getState().reset(); store.getState().setPhase("starting");
     try {
       const backend = await window.desktop?.startBackend();
@@ -138,11 +143,11 @@ export function useConversation() {
           },
           onSpeechEnd: () => {
             if (!capturing.current || !active.current || busy.current) return;
-            busy.current = true; pause(); store.getState().setPhase("transcribing");
+            busy.current = true; pauseCapture(); store.getState().setPhase("transcribing");
             socket.current?.send(JSON.stringify({ type: "audio.end", turn_id: turn.current })); armTimeout();
           },
           onVADMisfire: () => {
-            if (capturing.current) { capturing.current = false; busy.current = true; pause(); cancellation.current = turn.current; socket.current?.send(JSON.stringify({ type: "turn.cancel", turn_id: turn.current })); turn.current = ""; }
+            if (capturing.current) { capturing.current = false; busy.current = true; pauseCapture(); cancellation.current = turn.current; socket.current?.send(JSON.stringify({ type: "turn.cancel", turn_id: turn.current })); turn.current = ""; }
           },
         });
         if (!active.current || version !== generation.current) { await created.destroy(); return; }
@@ -163,7 +168,7 @@ export function useConversation() {
       });
       ws.addEventListener("close", () => {
         if (socket.current !== ws || version !== generation.current || !active.current) return;
-        active.current = false; busy.current = false; clearTimeoutRef(); pause(); player.current!.stop();
+        active.current = false; paused.current = false; busy.current = false; clearTimeoutRef(); pauseCapture(); player.current!.stop();
         store.getState().setSessionId(null); store.getState().setError("对话连接已断开，请重新开始练习。");
       });
     } catch (error) {
@@ -175,40 +180,64 @@ export function useConversation() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const interrupt = useCallback(() => {
-    if (!active.current) return;
-    player.current!.stop(); pause(); busy.current = true; clearTimeoutRef();
+    if (!active.current || paused.current) return;
+    player.current!.stop(); pauseCapture(); busy.current = true; clearTimeoutRef();
     if (cancellation.current !== null) return;
     cancellation.current = turn.current;
     socket.current?.send(JSON.stringify({ type: "turn.cancel", turn_id: turn.current }));
     turn.current = ""; store.getState().setPhase("thinking");
   }, []);
-  const stop = useCallback(async () => {
+  const pauseSession = useCallback(() => {
+    if (!active.current || paused.current || !store.getState().sessionId) return false;
+    const shouldCancel = busy.current || capturing.current;
+    const currentTurn = turn.current;
+    paused.current = true; busy.current = true; clearTimeoutRef(); player.current!.stop(); pauseCapture();
+    store.getState().setPartial(""); store.getState().setMouthLevel(0); store.getState().setPhase("paused");
+    if (shouldCancel && currentTurn && cancellation.current === null && socket.current?.readyState === WebSocket.OPEN) {
+      cancellation.current = currentTurn;
+      socket.current.send(JSON.stringify({ type: "turn.cancel", turn_id: currentTurn }));
+      turn.current = "";
+    }
+    return true;
+  }, []);
+  const resumeSession = useCallback(() => {
+    if (!active.current || !paused.current || !store.getState().sessionId) return false;
+    paused.current = false;
+    if (cancellation.current !== null) store.getState().setPhase("starting");
+    else void resume();
+    return true;
+  }, [resume]);
+  const stop = useCallback(async (mode: "save" | "discard" = "save") => {
     const id = store.getState().sessionId;
-    active.current = false; busy.current = false; cancellation.current = null; clearTimeoutRef(); pause(); player.current!.stop();
+    active.current = false; paused.current = false; busy.current = false; cancellation.current = null; clearTimeoutRef(); pauseCapture(); player.current!.stop();
     const ws = socket.current;
-    if (ws?.readyState === WebSocket.OPEN) {
+    const awaitingServer = ws?.readyState === WebSocket.OPEN;
+    let acknowledged = false;
+    if (awaitingServer) {
       await new Promise<void>(resolve => {
         const deadline = setTimeout(resolve, 4000);
-        stopped.current = () => { clearTimeout(deadline); resolve(); };
-        ws.send(JSON.stringify({ type: "session.stop" }));
+        stopped.current = () => { acknowledged = true; clearTimeout(deadline); resolve(); };
+        ws.send(JSON.stringify({ type: mode === "discard" ? "session.discard" : "session.stop" }));
       });
     }
     generation.current++; stopped.current = null; ws?.close(); socket.current = null;
     cache.current.clear(); chunks.current = []; lastInput.current = null;
     await vad.current?.destroy().catch(() => undefined); vad.current = null;
-    store.getState().setSessionId(null); store.getState().setPhase("idle"); store.getState().setError(null); store.getState().setPartial("");
+    if (mode === "discard") store.getState().reset();
+    else { store.getState().setSessionId(null); store.getState().setPhase("idle"); store.getState().setError(null); store.getState().setPartial(""); }
+    if (mode === "discard" && awaitingServer && !acknowledged) throw new Error("未能确认本次练习已删除，请到练习记录中检查。");
     return id;
   }, []);
   const submitText = useCallback((text: string) => {
-    if (!text.trim() || busy.current || !active.current || !store.getState().sessionId || socket.current?.readyState !== WebSocket.OPEN) return false;
-    busy.current = true; pause(); turn.current = crypto.randomUUID(); store.getState().setError(null); store.getState().setPhase("thinking");
+    if (!text.trim() || paused.current || busy.current || !active.current || !store.getState().sessionId || socket.current?.readyState !== WebSocket.OPEN) return false;
+    busy.current = true; pauseCapture(); turn.current = crypto.randomUUID(); store.getState().setError(null); store.getState().setPhase("thinking");
     lastInput.current = { id: turn.current, text: text.trim() };
     socket.current.send(JSON.stringify({ type: "text.submit", turn_id: turn.current, text: text.trim() })); armTimeout(); return true;
   }, []);
   const retry = useCallback(() => {
     const input = lastInput.current;
-    if (!input || !active.current || busy.current || !store.getState().sessionId || socket.current?.readyState !== WebSocket.OPEN) return false;
-    busy.current = true; pause(); turn.current = input.id; store.getState().setError(null);
+    if (!input || paused.current || !active.current || busy.current || !store.getState().sessionId || socket.current?.readyState !== WebSocket.OPEN) return false;
+    busy.current = true; pauseCapture(); turn.current = input.id; store.getState().setError(null);
     if (input.text) {
       store.getState().setPhase("thinking"); socket.current.send(JSON.stringify({ type: "text.submit", turn_id: input.id, text: input.text }));
     } else if (input.audio?.length) {
@@ -226,8 +255,8 @@ export function useConversation() {
     armTimeout(); return true;
   }, []);
   const replay = useCallback((messageId: string) => {
-    if (!active.current || busy.current || !store.getState().sessionId) return;
-    pause(); busy.current = true; turn.current = crypto.randomUUID(); currentMessage.current = messageId;
+    if (!active.current || paused.current || busy.current || !store.getState().sessionId) return;
+    pauseCapture(); busy.current = true; turn.current = crypto.randomUUID(); currentMessage.current = messageId;
     const audio = cache.current.get(messageId);
     if (audio) { player.current!.start(); store.getState().setPhase("speaking"); for (const chunk of audio) player.current!.push(chunk); player.current!.end(); }
     else { store.getState().setPhase("thinking"); socket.current?.send(JSON.stringify({ type: "assistant.replay", turn_id: turn.current, message_id: messageId })); armTimeout(); }
@@ -236,5 +265,5 @@ export function useConversation() {
     active.current = false; generation.current++; clearTimeoutRef(); player.current!.close();
     socket.current?.close(); void vad.current?.destroy();
   }, []);
-  return { start, stop, submitText, interrupt, replay, retry };
+  return { start, stop, submitText, interrupt, pause: pauseSession, resume: resumeSession, replay, retry };
 }

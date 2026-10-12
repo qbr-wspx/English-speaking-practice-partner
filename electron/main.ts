@@ -1,15 +1,20 @@
 import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, copyFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
+import { homedir } from "node:os";
 import path from "node:path";
-import { ConfigurationError, loadServiceConfig, serviceEnvironment } from "./serviceConfig";
+import { ConfigurationError, loadServiceConfigFromFiles, serviceEnvironment } from "./serviceConfig";
 import { loadFriendsUrl, loadFriendToken, saveFriendToken } from "./friendsConfig";
+import { legacyProfile, migrationArgument, readLegacyConfiguration, saveMigratedConfiguration } from "./legacyConfig";
+
+const isMigrationWorker = process.argv.includes(migrationArgument);
+const oldProfile = legacyProfile(process.env.LOCALAPPDATA || path.join(homedir(), 'AppData', 'Local'));
 
 const requestedTestPort = Number(process.env.LINGO_TEST_PORT);
 const BACKEND_PORT = !app.isPackaged && process.env.LINGO_TEST_DATA_DIR && Number.isInteger(requestedTestPort) && requestedTestPort > 1024 && requestedTestPort < 65536 ? requestedTestPort : 18765;
 const friendsUrl = loadFriendsUrl(app.isPackaged ? process.resourcesPath : path.resolve(__dirname, ".."), !app.isPackaged ? process.env.LINGO_FRIENDS_SERVICE_URL : undefined);
-app.setPath("userData", !app.isPackaged && process.env.LINGO_TEST_DATA_DIR || path.join(app.getPath("appData"), friendsUrl ? "english-speaking-companion-friends" : "english-speaking-companion"));
+app.setPath("userData", isMigrationWorker ? oldProfile : !app.isPackaged && process.env.LINGO_TEST_DATA_DIR || path.join(app.getPath("appData"), friendsUrl ? "english-speaking-companion-friends" : "english-speaking-companion"));
 const backendToken = randomBytes(32).toString("hex");
 let friendToken: string | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -17,6 +22,7 @@ let backendProcess: ChildProcessWithoutNullStreams | null = null;
 let backendState: "stopped" | "starting" | "ready" | "error" = "stopped";
 let backendMessage = "";
 let startupPromise: Promise<{ state: string; message: string }> | null = null;
+let loadedConfig: Record<string, string> | null = null;
 
 function recordStartup(stage: string, extra: Record<string, string | number | boolean> = {}) {
   try {
@@ -24,6 +30,8 @@ function recordStartup(stage: string, extra: Record<string, string | number | bo
     mkdirSync(directory, { recursive: true });
     // Deliberately allow only our own fixed status fields; never record secrets or raw errors.
     writeFileSync(path.join(directory, "startup-status.json"), JSON.stringify({ at: new Date().toISOString(), version: app.getVersion(), executable: process.execPath, stage, ...extra }, null, 2));
+    const log = path.join(directory, 'startup-events.jsonl');
+    appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), pid: process.pid, version: app.getVersion(), stage, ...extra }) + '\n');
   } catch { /* Diagnostics must not prevent startup. */ }
 }
 
@@ -62,7 +70,14 @@ async function waitForBackend(expectedProcess = backendProcess): Promise<boolean
 }
 
 function startBackend(): Promise<{ state: string; message: string }> {
-  if (!startupPromise) startupPromise = (friendsUrl ? startFriendsBackend() : startBackendOnce()).finally(() => { startupPromise = null; });
+  if (!startupPromise) startupPromise = (friendsUrl ? startFriendsBackend() : startBackendOnce())
+    .catch(() => {
+      backendState = "error";
+      backendMessage = "本机服务启动遇到临时问题，请点击重新连接。";
+      recordStartup("startup-failed");
+      return getBackendStatus();
+    })
+    .finally(() => { startupPromise = null; });
   return startupPromise;
 }
 
@@ -96,9 +111,34 @@ async function startBackendOnce(): Promise<{ state: string; message: string }> {
   }
   backendState = "starting";
   backendMessage = "正在读取本机加密配置…";
+  recordStartup("configuration-reading");
   let config: Record<string, string>;
   try {
-    config = await loadServiceConfig(app.getPath("userData"), safeStorage, !app.isPackaged && process.env.LINGO_TEST_DATA_DIR ? process.env : {});
+    const configFiles = Array.from(new Set([
+      path.join(app.getPath("userData"), "services.bin"),
+      process.env.APPDATA ? path.join(process.env.APPDATA, "english-speaking-companion", "services.bin") : "",
+      path.join(homedir(), "AppData", "Roaming", "english-speaking-companion", "services.bin"),
+    ].filter(Boolean)));
+    if (app.isPackaged) configFiles.push(path.join(process.resourcesPath, "local-config.bin"));
+    recordStartup("configuration-locations", {
+      candidates: configFiles.length,
+      available: configFiles.filter(file => existsSync(file)).length,
+      packagedFallback: app.isPackaged && existsSync(path.join(process.resourcesPath, "local-config.bin")),
+    });
+    try {
+      config = loadedConfig || await loadServiceConfigFromFiles(configFiles, safeStorage, !app.isPackaged && process.env.LINGO_TEST_DATA_DIR ? process.env : {});
+    } catch (originalError) {
+      if (!app.isPackaged) throw originalError;
+      const migrated = await readLegacyConfiguration(process.execPath, oldProfile);
+      if (!migrated) throw originalError;
+      saveMigratedConfiguration(app.getPath('userData'), safeStorage.encryptString(JSON.stringify(migrated)));
+      config = await loadServiceConfigFromFiles([path.join(app.getPath('userData'), 'services.bin')], safeStorage);
+      // Keep prior practice history when the real desktop profile is still new.
+      const database = path.join(app.getPath('userData'), 'cafe-lingo.db');
+      if (!existsSync(database) && existsSync(path.join(oldProfile, 'cafe-lingo.db'))) copyFileSync(path.join(oldProfile, 'cafe-lingo.db'), database);
+      recordStartup('configuration-migrated');
+    }
+    loadedConfig = config;
     recordStartup("configuration-loaded");
   } catch (error) {
     backendState = "error";
@@ -136,6 +176,7 @@ async function startBackendOnce(): Promise<{ state: string; message: string }> {
       env: {
         ...serviceEnvironment(process.env, config),
         LINGO_BACKEND_TOKEN: backendToken,
+        LINGO_APP_VERSION: app.getVersion(),
         APP_DATA_DIR: dataDir,
         BACKEND_PORT: String(BACKEND_PORT),
       },
@@ -154,6 +195,7 @@ async function startBackendOnce(): Promise<{ state: string; message: string }> {
   child.on("exit", (code) => {
     if (backendProcess !== child) return;
     backendProcess = null;
+    recordStartup('backend-exited', { exitCode: code ?? -1 });
     if (backendState !== "stopped") {
       backendState = code === 0 ? "stopped" : "error";
       backendMessage = code === 0 ? "服务已停止" : `后端异常退出（${code ?? "unknown"}）`;
@@ -223,9 +265,19 @@ function createWindow() {
   else mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
 }
 
-const ownsAppInstance = app.requestSingleInstanceLock();
-if (!ownsAppInstance) app.quit();
+const ownsAppInstance = !isMigrationWorker && app.requestSingleInstanceLock();
+if (isMigrationWorker) {
+  app.whenReady().then(async () => {
+    try {
+      const config = await loadServiceConfigFromFiles([path.join(oldProfile, 'services.bin')], safeStorage);
+      // Private parent/child pipe only: never log or persist plaintext.
+      process.stdout.write(JSON.stringify(config), () => app.exit(0));
+    } catch { app.exit(1); }
+  });
+}
+else if (!ownsAppInstance) app.quit();
 else app.whenReady().then(async () => {
+  recordStartup("desktop-ready");
   registerIpc();
   createWindow();
   void startBackend();

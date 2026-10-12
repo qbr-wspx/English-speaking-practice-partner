@@ -1,23 +1,12 @@
-/* Illustrated setting cues sit in the portrait's open margins; Mia's approved artwork stays intact. */
-.practice-stage{background:#edf2f7;isolation:isolate}
-.scene-backdrop{--scene-ink:#ad927b;--scene-accent:#d8b490;--scene-glow:#f1d2a0;position:absolute;inset:48px 0 0;z-index:1;pointer-events:none;overflow:hidden;color:var(--scene-ink)}
-.scene-backdrop--restaurant{--scene-ink:#b68b84;--scene-accent:#d7a49b;--scene-glow:#f6c7aa}
-.scene-backdrop--hotel{--scene-ink:#919ba8;--scene-accent:#b0b5c2;--scene-glow:#f4d7a7}
-.scene-backdrop--airport{--scene-ink:#83a5b9;--scene-accent:#a7c8d5;--scene-glow:#c7e1ed}
-.scene-backdrop--shopping{--scene-ink:#c39597;--scene-accent:#e0b3b0;--scene-glow:#f5d6c7}
-.scene-backdrop--directions{--scene-ink:#83a9a5;--scene-accent:#a8c8bd;--scene-glow:#d7e7cf}
-.scene-backdrop--interview{--scene-ink:#8692a7;--scene-accent:#a8b2c4;--scene-glow:#d7dce7}
-.scene-backdrop--social{--scene-ink:#8caa9d;--scene-accent:#a9cbb0;--scene-glow:#f0d9b6}
-.scene-backdrop--custom{--scene-ink:#9aa5b7;--scene-accent:#bec9d7;--scene-glow:#d8e3ed}
-.scene-orb{position:absolute;width:280px;height:280px;right:-95px;top:-60px;border-radius:50%;background:radial-gradient(circle,var(--scene-glow),transparent 70%);opacity:.66}
-.scene-illustration{width:100%;height:100%;opacity:.43;mix-blend-mode:multiply}
-.scene-horizon{fill:var(--scene-accent);opacity:.14}.scene-left,.scene-right{fill:var(--scene-accent);opacity:.12}.scene-line{fill:none;stroke:var(--scene-ink);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.scene-accent{fill:var(--scene-accent);opacity:.55}.scene-light{fill:var(--scene-glow);opacity:.75}
-.scene-sign{position:absolute;right:5%;top:10%;display:grid;gap:3px;text-align:right;color:var(--scene-ink);opacity:.9;text-shadow:0 1px #ffffffa6}
-.scene-sign strong{font-size:12px;letter-spacing:.22em;font-weight:700}.scene-sign span{font-size:10px;letter-spacing:.04em}
-.practice-stage .avatar-2d{z-index:0}.practice-stage .stage-header,.practice-stage .stage-caption,.practice-stage .status-wrap,.practice-stage .goal-panel{z-index:2}
+/* The illustrated setting is behind the approved 2D portrait. */
+.practice-stage{background:#e8f0f3;isolation:isolate}
+.scene-backdrop{position:absolute;inset:48px 0 160px;z-index:0;overflow:hidden;pointer-events:none;background:radial-gradient(circle at 50% 30%,#f7fbff,#dce8ed)}
+.scene-backdrop img{display:block;width:100%;height:100%;object-fit:cover;object-position:center 42%;filter:saturate(.76) contrast(.94)}
+.scene-atmosphere{position:absolute;inset:0;background:linear-gradient(0deg,#e8f0f3 0%,transparent 22%),linear-gradient(90deg,#e7f1f39c 0%,transparent 24%,transparent 76%,#e7f1f37a 100%)}
+.scene-backdrop--custom{background:radial-gradient(circle at 72% 23%,#fff9e6 0,transparent 25%),linear-gradient(145deg,#dcebf0,#edf3f4 55%,#d9e6ed)}
+.practice-stage .avatar-2d{z-index:1;background:transparent}.practice-stage .stage-header,.practice-stage .stage-caption,.practice-stage .status-wrap,.practice-stage .goal-panel{z-index:3}
 .practice-stage .goal-panel{box-shadow:0 14px 45px #1e49621c;backdrop-filter:blur(16px)}
-.practice-stage .stage-caption{border:1px solid #ffffffab;box-shadow:0 8px 24px #39516b15}
-.avatar-presence{position:absolute;inset:0;pointer-events:none}.avatar-presence i{position:absolute;display:block;border-radius:50%;width:7px;height:7px;opacity:0;background:#8dc0d7;box-shadow:0 0 12px #91d0e0;transition:opacity .3s}
+.practice-stage .stage-caption{border:1px solid #ffffffab;box-shadow:0 8px 24px #39516b15}.avatar-presence{position:absolute;inset:0;pointer-events:none}.avatar-presence i{position:absolute;display:block;border-radius:50%;width:7px;height:7px;opacity:0;background:#8dc0d7;box-shadow:0 0 12px #91d0e0;transition:opacity .3s}
 .avatar-presence i:nth-child(1){left:20%;top:38%}.avatar-presence i:nth-child(2){right:19%;top:27%;width:5px;height:5px}.avatar-presence i:nth-child(3){right:25%;top:53%;width:4px;height:4px}
 .avatar-2d[data-phase=listening] .avatar-presence i:nth-child(1),.avatar-2d[data-phase=thinking] .avatar-presence i:nth-child(2),.avatar-2d[data-phase=speaking] .avatar-presence i:nth-child(3){opacity:.75}
 .avatar-2d[data-phase=listening] .avatar-presence i:nth-child(1){animation:presence-pulse 1.6s ease-in-out infinite}
@@ -39,7 +28,33 @@
 .review-phrase-note{font-size:11px!important;color:#66838b;margin:10px 0 0!important}
 .review-summary{margin:10px 30px 26px!important;background:#f4f8fb!important;padding:20px!important}.review-summary h3{font-size:15px!important}.review-summary h4{font-size:11px!important}.review-content>.transcript-list,.review-content>h3{margin-left:30px;margin-right:30px}.review-content>h3{margin-top:23px}.review-showcase--fresh .review-hero{animation:review-enter .55s ease-out both}.review-showcase--fresh .review-evidence{animation:review-enter .65s .12s ease-out both}
 @keyframes review-enter{from{transform:translateY(13px);opacity:0}to{transform:none;opacity:1}}
-@media(max-width:1100px){.scene-sign{display:none}.review-hero h3{font-size:27px!important}}
+@media(max-width:1100px){.review-hero h3{font-size:27px!important}}
 @media(max-width:540px){.review-hero{padding:24px}.review-evidence,.review-before-after{padding:20px}.review-summary{margin:10px 20px 24px!important}.review-phrase-row{gap:6px}.review-hero-stats{gap:15px}}
 @media(prefers-reduced-motion:reduce){.avatar-presence i,.avatar-encouragement,.review-showcase--fresh .review-hero,.review-showcase--fresh .review-evidence{animation:none!important}}
 .avatar-2d[data-reduced-motion=true] .avatar-presence i,.avatar-2d[data-reduced-motion=true] .avatar-encouragement{animation:none!important}
+
+.avatar-pose{transform-box:view-box;transform-origin:50% 48%;transition:transform .55s cubic-bezier(.2,.8,.2,1)}
+.avatar-2d[data-phase=listening] .avatar-pose{transform:translateY(-9px) scale(1.018)}
+.avatar-2d[data-phase=thinking] .avatar-pose{transform:translateY(5px) rotate(-1.3deg)}
+.avatar-2d[data-phase=speaking] .avatar-pose{transform:translateY(-3px) scale(1.008)}
+.avatar-2d[data-encouraging=true] .avatar-pose{transform:translateY(-11px) rotate(.6deg) scale(1.018)}
+.avatar-2d[data-encouraging=true] .avatar-encouragement{font-size:42px;color:#59a9c4;right:24%;top:28%}
+.avatar-cheer-cheeks{opacity:0;transition:opacity .25s}.avatar-2d[data-encouraging=true] .avatar-cheer-cheeks{opacity:1}
+.practice-session-actions,.practice-exit-actions{display:flex;align-items:center;gap:9px}.resume-button{color:#fff;border-color:#2589b5;background:#2589b5}.resume-button:hover:not(:disabled){background:#1e789f}.conversation-panel.is-paused{box-shadow:inset 0 0 0 1px #9fcbdc}.conversation-panel.is-paused .connection-dot{background:#e6a953}.discard-button{color:#9a5362;border-color:#ead6dc;background:#fffafa}.discard-button:hover:not(:disabled){background:#fff0f2}
+@media(max-width:540px){.practice-session-actions,.practice-exit-actions{gap:5px}.practice-controls button{padding:8px 9px;font-size:11px}}
+@media(prefers-reduced-motion:reduce){.avatar-pose{transition:none!important}}
+.avatar-2d[data-reduced-motion=true] .avatar-pose{transition:none!important}
+.original-preview-picture:not(.complete){background:#e8f0f3}
+.original-preview-picture .scene-backdrop{inset:0;z-index:0}
+.original-preview-picture .avatar-2d{z-index:1;background:transparent}
+.preview-scene-select{display:flex;align-items:center;gap:10px;margin-top:12px;color:#60758c;font-size:12px}
+.preview-scene-select select{min-width:130px;padding:7px 10px;border:1px solid #c9d9e5;border-radius:7px;background:white;color:#17324d}
+.avatar-distance-control{display:grid;gap:5px;min-width:0;padding:10px 12px;border:1px solid #ffffffbb;border-radius:10px;background:#fffffff0;box-shadow:0 8px 24px #39516b16;color:#17324d;font-size:11px}
+.avatar-distance-heading,.avatar-distance-ends{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.avatar-distance-heading output{font-variant-numeric:tabular-nums;color:#277b9f;font-weight:600}
+.avatar-distance-ends{color:#6f8796;font-size:10px;font-weight:400}
+.avatar-distance-control input{width:100%;height:18px;padding:0;margin:0;border:0;background:transparent;accent-color:#2589b5;cursor:pointer}
+.practice-stage>.avatar-distance-control{position:absolute;right:16px;top:60px;z-index:3;width:148px;backdrop-filter:blur(12px)}
+.settings-dialog>.avatar-distance-control{margin:15px 0;background:#f1f7fa;border-color:#d9e7ee;box-shadow:none;font-size:13px}
+.original-preview>.avatar-distance-control{display:grid;grid-template-columns:auto minmax(110px,220px);align-items:center;gap:12px;width:min(100%,420px);padding:0;margin-top:8px;border:0;background:none;box-shadow:none}
+.original-preview>.avatar-distance-control .avatar-distance-ends{display:none}

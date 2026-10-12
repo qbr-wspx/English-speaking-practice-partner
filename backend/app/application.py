@@ -27,7 +27,7 @@ def create_app(engine=None, asr_service=None, llm_service=None, speech_service=N
     speech = speech_service or CloudSpeech()
     auth_token = token if token is not None else os.getenv("LINGO_BACKEND_TOKEN") or secrets.token_hex(32)
     active_sessions = set()
-    app = FastAPI(title="Lingo Studio API", version="0.2.5")
+    app = FastAPI(title="Lingo Studio API", version=os.getenv("LINGO_APP_VERSION", "0.2.13"))
     app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "null"], allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type", "Authorization"])
 
     @app.middleware("http")
@@ -235,6 +235,13 @@ def create_app(engine=None, asr_service=None, llm_service=None, speech_service=N
                     opening = db.add_turn(database, session_id, "assistant", scenario.opening_line, scenario.opening_translation, suggested_phrase=scenario.suggested_phrases[0] if scenario.suggested_phrases else "", request_id=turn_id)
                     await send("session.ready", turn_id, opening_line=opening.text, opening_translation=opening.translation, suggested_phrase=opening.suggested_phrase, message_id=opening.id, scenario=scenario.model_dump(), progress=progress)
                     worker = asyncio.create_task(speak(opening.text, turn_id))
+                elif kind == "session.discard":
+                    await cancel()
+                    if session_id:
+                        db.delete_conversation(database, session_id)
+                        active_sessions.discard(session_id)
+                    await send("session.discarded")
+                    await websocket.close(code=1000); return
                 elif kind == "session.stop" and session_id:
                     await cancel()
                     db.end_conversation(database, session_id)
